@@ -10,9 +10,29 @@
 #define LED_PIN 15
 #define A0_PIN 4   
 #define BUZZER_PIN 20
-float WARNING = 150;
+#define WARNING 150
+#define MIN_VOLT 0.6
+#define MAX_VOLT 3.3
+#define MAX_DUST 500
+#define ADC 4095.0
+#define BUZZER_F 5500
+#define FILT_DECAY 0.6
+#define FILT_RISE 0.8
+#define FILT_FALL 0.7
+#define FILT_NEW 0.2
+#define RES_DELAY 2000
+#define UPDT_INT 5000
+
+//AQI
+#define AMODE1 50
+#define AMODE2 100
+#define AMODE3 150
+#define AMODE4 200
+#define AMODE5 300
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 bool buzzerActivated = false;
+
 void setup() {
     pinMode(SDA_PIN, INPUT_PULLUP);
     pinMode(SCL_PIN, INPUT_PULLUP);
@@ -26,7 +46,7 @@ void setup() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    ledcSetup(0, 5000, 8); 
+    ledcSetup(0, BUZZER_F, 8); 
     ledcAttachPin(BUZZER_PIN, 0); 
 }
 
@@ -40,34 +60,38 @@ void loop() {
     int sensorValue = analogRead(A0_PIN);
     digitalWrite(LED_PIN, LOW);
     delayMicroseconds(9680);
-    float voltage = sensorValue * (3.3 / 4095.0);
-    if (voltage < 0.6) voltage = 0.6;  
-    float dustDensity = (voltage - 0.6) * (500.0 / (3.3 - 0.6));  //масштабування значень від 0 до 500
-    dustDensity = constrain(dustDensity, 0, 500);  
-    if (dustDensity > filteredDustDensity) {//фільтрація значень
-        filteredDustDensity = (filteredDustDensity * 0.8) + (dustDensity * 0.2);
+    
+    float voltage = sensorValue * (MAX_VOLT / ADC);
+    if (voltage < MIN_VOLT) voltage = MIN_VOLT;  
+    float dustDensity = (voltage - MIN_VOLT) * (MAX_DUST / (MAX_VOLT- MIN_VOLT));
+    dustDensity = constrain(dustDensity, 0, MAX_DUST);  
+    
+    if (dustDensity > filteredDustDensity) {
+        filteredDustDensity = (filteredDustDensity * FILT_RISE) + (dustDensity * FILT_NEW);
         lastSmokeTime = millis();
     } else {
-        if (millis() - lastSmokeTime > 2000) {
-            filteredDustDensity *= 0.6;
+        if (millis() - lastSmokeTime > RES_DELAY) {
+            filteredDustDensity *= FILT_DECAY;
         } else {
-            filteredDustDensity = (filteredDustDensity * 0.7) + (dustDensity * 0.3);
+            filteredDustDensity = (filteredDustDensity * FILT_FALL) + (dustDensity * (1 - FILT_FALL));
         }
     }
+
     String airQ;
-    if (filteredDustDensity <= 50) {
+    if (filteredDustDensity <= AMODE1) {
         airQ = "Good";
-    } else if (filteredDustDensity <= 100) {
+    } else if (filteredDustDensity <= AMODE2) {
         airQ = "Moderate";
-    } else if (filteredDustDensity <= 150) {
+    } else if (filteredDustDensity <= AMODE3) {
         airQ = "Unhealthy for Sensitive";
-    } else if (filteredDustDensity <= 200) {
+    } else if (filteredDustDensity <= AMODE4) {
         airQ = "Unhealthy";
-    } else if (filteredDustDensity <= 300) {
+    } else if (filteredDustDensity <= AMODE5) {
         airQ = "Very Unhealthy";
     } else {
         airQ = "Hazardous";
     }
+
     display.clearDisplay();
     display.setCursor(0, 0);
     display.print("Dust: ");
@@ -77,9 +101,10 @@ void loop() {
     display.print("AQI: ");
     display.print(airQ);
     display.display();
-    if (millis() - lastUpdate > 5000) {  
+
+    if (millis() - lastUpdate > UPDT_INT) {  
         if (filteredDustDensity >= WARNING) {  
-            ledcWriteTone(0, 5000); 
+            ledcWriteTone(0, BUZZER_F); 
         } else {
             ledcWriteTone(0, 0);  
         }
