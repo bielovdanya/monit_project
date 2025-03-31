@@ -25,4 +25,3 @@
 #define AMODE3 150
 #define AMODE4 200
 #define AMODE5 300
-
